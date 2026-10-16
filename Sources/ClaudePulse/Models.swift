@@ -138,14 +138,17 @@ enum ActivityState: Int, Comparable {
     var label: String {
         switch self {
         case .needsPermission: return "Needs permission"
-        case .waitingInput: return "Waiting for you"
+        case .waitingInput: return "Your turn"
         case .working: return "Working"
         case .compacting: return "Compacting"
         case .idle: return "Idle"
         }
     }
 
+    /// States a hook reported that stay until the session moves on.
     var needsAttention: Bool { self == .needsPermission || self == .waitingInput }
+    /// Only a permission prompt blocks the session; "your turn" is the normal resting state.
+    var isBlocking: Bool { self == .needsPermission }
 }
 
 /// A permission prompt waiting in a session, written by the PermissionRequest

@@ -89,7 +89,7 @@ enum TerminalJumper {
 
     private static func itermScript(tty: String) -> String {
         """
-        tell application "iTerm2"
+        tell application id "com.googlecode.iterm2"
             repeat with w in windows
                 repeat with t in tabs of w
                     repeat with s in sessions of t

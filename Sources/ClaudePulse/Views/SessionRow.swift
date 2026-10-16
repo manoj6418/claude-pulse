@@ -8,6 +8,8 @@ struct SessionRow: View {
     var onAnswer: (PermissionRequestRecord, PermissionDecision) -> Void = { _, _ in }
     var primaryRequestId: String?
     var label = SessionLabel()
+    /// Model + effort most sessions use; the row only shows its own when different.
+    var commonModel: String?
     var onLabelChange: (SessionLabel) -> Void = { _ in }
     @State private var hovering = false
     @State private var showSteps = false
@@ -22,10 +24,8 @@ struct SessionRow: View {
                 Text(label.name ?? session.name)
                     .font(.system(size: 12, weight: .semibold))
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                if let branch = session.gitBranch {
-                    Chip(text: branch, systemImage: "arrow.triangle.branch")
-                }
+                    .truncationMode(.tail)
+                    .help(label.name ?? session.name)
                 Spacer(minLength: 4)
                 Text(Format.ago(session.lastActivity, now: now))
                     .font(.system(size: 10))
@@ -48,9 +48,11 @@ struct SessionRow: View {
             }
 
             HStack(spacing: 5) {
-                Chip(text: session.modelName, systemImage: "cpu", tint: .accentColor)
-                if let effort = session.effort {
-                    Chip(text: effort, systemImage: "brain", tint: effortTint(effort))
+                if modelText != commonModel {
+                    Chip(text: session.modelName, systemImage: "cpu", tint: .accentColor)
+                    if let effort = session.effort {
+                        Chip(text: effort, systemImage: "brain", tint: effortTint(effort))
+                    }
                 }
                 if let cost = session.costUSD, cost > 0 {
                     Chip(text: Format.cost(cost), systemImage: "dollarsign.circle")
@@ -118,7 +120,12 @@ struct SessionRow: View {
                     isPrimary: request.id == primaryRequestId,
                     onAnswer: { onAnswer(request, $0) }
                 )
-            } else if session.activity.needsAttention || session.activity == .compacting {
+            } else if session.activity == .waitingInput {
+                Label("Your turn", systemImage: "arrow.turn.down.left")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .help(session.attentionMessage ?? "Claude finished and is waiting for your next message")
+            } else if session.activity.isBlocking || session.activity == .compacting {
                 Label(session.attentionMessage ?? session.activity.label, systemImage: attentionIcon)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Palette.activity(session.activity))
@@ -135,13 +142,13 @@ struct SessionRow: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(session.activity.needsAttention
+                .fill(session.activity.isBlocking
                       ? Palette.activity(session.activity).opacity(0.10)
                       : Color.primary.opacity(hovering ? 0.07 : 0.04))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
-                .strokeBorder(session.activity.needsAttention ? Palette.activity(session.activity).opacity(0.5) : .clear)
+                .strokeBorder(session.activity.isBlocking ? Palette.activity(session.activity).opacity(0.5) : .clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -183,6 +190,9 @@ struct SessionRow: View {
     /// Git, cache and background agents, as small icon + text items.
     private var infoItems: [(text: String, icon: String, color: Color, help: String)] {
         var items: [(String, String, Color, String)] = []
+        if let branch = session.gitBranch {
+            items.append((branch, "arrow.triangle.branch", .secondary, "Git branch"))
+        }
         if let git = session.git {
             if git.changedFiles > 0 {
                 items.append(("\(git.changedFiles) uncommitted", "pencil.line", .orange, "\(git.changedFiles) changed files not committed"))
@@ -241,7 +251,10 @@ struct SessionRow: View {
             return ("Possibly stuck · nothing new for \(quiet)", "exclamationmark.triangle.fill", .orange)
         }
         let since = session.turnStartedAt.map { " · \(Format.elapsed(now.timeIntervalSince($0)))" } ?? ""
-        return ("Thinking" + since, "ellipsis.bubble", .secondary)
+        if session.runningAgents > 0 {
+            return ("Agents working" + since, "person.2", .secondary)
+        }
+        return ("Working" + since, "ellipsis.bubble", .secondary)
     }
 
     /// Auto-compact happens near the end of the window (about 97% on 1M models).
@@ -254,8 +267,15 @@ struct SessionRow: View {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
+    private var modelText: String {
+        [session.modelName, session.effort].compactMap { $0 }.joined(separator: " ")
+    }
+
     private var contextLabel: String {
-        guard let tokens = session.contextTokens else { return "ctx —" }
+        // Right after /compact Claude Code reports nothing until the next reply.
+        guard let tokens = session.contextTokens, tokens > 0 else {
+            return session.compactCount > 0 ? "— until next reply" : "ctx —"
+        }
         let pct = session.contextPercentage.map { " · \(Format.percent($0))" } ?? ""
         return "\(Format.tokens(tokens)) / \(Format.tokens(session.contextWindowSize))\(pct)"
     }

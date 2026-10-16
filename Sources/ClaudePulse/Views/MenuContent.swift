@@ -244,7 +244,7 @@ struct MenuContent: View {
 
     private var sessions: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Sessions · \(store.sessions.count)", trailing: totalCost)
+            SectionHeader(title: "Sessions · \(store.sessions.count)", trailing: commonModel)
             if store.sessions.isEmpty {
                 Text("No Claude Code sessions running.")
                     .font(.system(size: 12))
@@ -301,6 +301,7 @@ struct MenuContent: View {
         SessionRow(session: session, now: now, contextThreshold: preferences.contextThreshold,
                    onAnswer: { store.answer($0, with: $1) }, primaryRequestId: primaryRequestId,
                    label: store.labels[session.sessionId] ?? SessionLabel(),
+                   commonModel: commonModel,
                    onLabelChange: { store.setLabel($0, for: session.sessionId) })
     }
 
@@ -319,7 +320,7 @@ struct MenuContent: View {
         let hidden = showIdle ? [] : Set(hiddenIdle.map(\.sessionId))
         let shown = store.sessions.filter { !hidden.contains($0.sessionId) }
         func rank(_ s: SessionSummary) -> Int {
-            if s.activity.needsAttention { return 0 }
+            if s.activity.isBlocking { return 0 }
             return store.labels[s.sessionId]?.pinned == true ? 1 : 2
         }
         return shown.enumerated()
@@ -348,9 +349,13 @@ struct MenuContent: View {
         return max(240, screen - rest)
     }
 
-    private var totalCost: String? {
-        let total = store.sessions.compactMap(\.costUSD).reduce(0, +)
-        return total > 0 ? "\(Format.cost(total)) API-equivalent" : nil
+    /// The model + effort most sessions run, shown once in the header instead of on every card.
+    private var commonModel: String? {
+        let names = store.sessions.map { [$0.modelName, $0.effort].compactMap { $0 }.joined(separator: " ") }
+        guard names.count > 1 else { return nil }
+        let counts = Dictionary(names.map { ($0, 1) }, uniquingKeysWith: +)
+        guard let top = counts.max(by: { $0.value < $1.value }), top.value * 2 > names.count else { return nil }
+        return top.key
     }
 
     /// Last 3 events from the past day.

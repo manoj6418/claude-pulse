@@ -4,9 +4,16 @@ enum Palette {
     static func usage(_ pct: Double) -> Color {
         if pct >= 90 { return .red }
         if pct >= 75 { return .orange }
-        if pct >= 50 { return .yellow }
+        if pct >= 50 { return amber }
         return .green
     }
+
+    /// System yellow is unreadable on a light background; use a darker amber there.
+    static let amber = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? .systemYellow
+            : NSColor(red: 0.72, green: 0.52, blue: 0.0, alpha: 1)
+    })
 
     static func activity(_ state: ActivityState) -> Color {
         switch state {

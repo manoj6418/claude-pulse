@@ -224,7 +224,8 @@ final class SessionStore: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.refresh() }
     }
 
-    var attentionCount: Int { sessions.filter { $0.activity.needsAttention }.count + unlistedRequests.count }
+    /// Sessions blocked on a permission prompt: the "need you" badge and menu bar count.
+    var attentionCount: Int { sessions.filter { $0.activity.isBlocking }.count + unlistedRequests.count }
 
     func refresh() {
         tick += 1
@@ -318,7 +319,7 @@ final class SessionStore: ObservableObject {
         let source: String
         if preferences.newSessionTerminal == "iTerm" {
             source = """
-            tell application "iTerm2"
+            tell application id "com.googlecode.iterm2"
                 activate
                 set w to (create window with default profile)
                 tell current session of w to write text "\(escaped)"
@@ -529,7 +530,7 @@ final class SessionStore: ObservableObject {
         }
 
         return result.sorted { a, b in
-            if a.activity.needsAttention != b.activity.needsAttention { return a.activity.needsAttention }
+            if a.activity.isBlocking != b.activity.isBlocking { return a.activity.isBlocking }
             if (a.activity == .working) != (b.activity == .working) { return a.activity == .working }
             return (a.lastActivity ?? .distantPast) > (b.lastActivity ?? .distantPast)
         }

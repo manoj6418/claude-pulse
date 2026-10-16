@@ -271,10 +271,21 @@ enum Bridge {
     }
 
     /// "cd /some/long/path && go test ./..." → "go test ./...": the folder is already on the row.
+    /// Also drops leading variable settings: "SP=/tmp/x; B=y go test" → "go test".
     static func dropLeadingCd(_ command: String) -> String {
-        let trimmed = command.trimmingCharacters(in: .whitespaces)
-        guard trimmed.hasPrefix("cd "), let range = trimmed.range(of: "&&") else { return command }
-        let rest = trimmed[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        var rest = command.trimmingCharacters(in: .whitespaces)
+        let assignment = try! NSRegularExpression(pattern: #"^[A-Za-z_][A-Za-z0-9_]*=("[^"]*"|'[^']*'|\S*)\s*(;|&&)?\s*"#)
+        while true {
+            let before = rest
+            if rest.hasPrefix("cd "), let range = rest.range(of: "&&") {
+                rest = rest[range.upperBound...].trimmingCharacters(in: .whitespaces)
+            }
+            let ns = rest as NSString
+            if let match = assignment.firstMatch(in: rest, range: NSRange(location: 0, length: ns.length)) {
+                rest = ns.substring(from: match.range.length).trimmingCharacters(in: .whitespaces)
+            }
+            if rest == before { break }
+        }
         return rest.isEmpty ? command : rest
     }
 
