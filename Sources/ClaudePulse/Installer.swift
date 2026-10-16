@@ -12,7 +12,11 @@ enum Installer {
         case wrongPath(String)
     }
 
-    static let hookEvents = ["UserPromptSubmit", "PostToolUse", "Notification", "Stop", "PreCompact", "SessionEnd"]
+    static let hookEvents = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Notification", "Stop",
+                             "PreCompact", "SessionEnd", "PermissionRequest", "SubagentStart", "SubagentStop"]
+
+    /// PermissionRequest waits for an answer from the panel; the others return at once.
+    static func hookTimeout(for event: String) -> Int { event == "PermissionRequest" ? 600 : 5 }
 
     static var executablePath: String { Bundle.main.executablePath ?? CommandLine.arguments[0] }
     static var statusLineCommand: String { "'\(executablePath)' --statusline" }
@@ -59,7 +63,7 @@ enum Installer {
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         for event in hookEvents {
             var groups = removingOurs(from: hooks[event])
-            groups.append(["hooks": [["type": "command", "command": hookCommand, "timeout": 5]]])
+            groups.append(["hooks": [["type": "command", "command": hookCommand, "timeout": hookTimeout(for: event)]]])
             hooks[event] = groups
         }
         settings["hooks"] = hooks

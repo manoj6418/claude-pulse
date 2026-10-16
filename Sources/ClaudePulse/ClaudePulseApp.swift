@@ -24,6 +24,34 @@ enum Entry {
             }
             return
         }
+        if let i = args.firstIndex(of: "--jump"), i + 1 < args.count, let pid = Int32(args[i + 1]) {
+            print(TerminalJumper.jump(to: pid) ?? "no app found")
+            return
+        }
+        if args.contains("--phone-test") {
+            let p = Preferences()
+            PhoneNotifier.send(server: p.phoneServer, topic: p.phoneTopic, title: "✓ Claude Pulse test",
+                               message: "Phone alerts are working.", kind: .test) { error in
+                print(error ?? "sent to \(p.phoneServer)/\(p.phoneTopic.prefix(16))…")
+                exit(error == nil ? 0 : 1)
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(20))
+            return
+        }
+        if let i = args.firstIndex(of: "--capture-panel"), i + 1 < args.count {
+            let path = URL(fileURLWithPath: args[i + 1]).standardizedFileURL.path
+            DistributedNotificationCenter.default().postNotificationName(
+                PanelCapture.request, object: nil,
+                userInfo: ["path": path, "menubar": args.contains("--menubar") ? "1" : "0",
+                           "settings": args.contains("--settings") ? "1" : "0"],
+                deliverImmediately: true)
+            return
+        }
+        if args.contains("--toggle-panel") {
+            DistributedNotificationCenter.default().postNotificationName(
+                HotKey.toggleNotification, object: nil, userInfo: nil, deliverImmediately: true)
+            return
+        }
         if args.contains("--notification-settings") {
             UNUserNotificationCenter.current().getNotificationSettings { s in
                 print("authorization:", s.authorizationStatus.rawValue, "(0 notDetermined, 1 denied, 2 authorized, 3 provisional)")
@@ -36,7 +64,7 @@ enum Entry {
             return
         }
         if args.contains("--test-notification") {
-            let store = SessionStore(preferences: Preferences())
+            let store = SessionStore(preferences: Preferences(), detectsEvents: false)
             RunLoop.main.run(until: Date().addingTimeInterval(1.5))
             if let i = args.firstIndex(of: "--session"), i + 1 < args.count {
                 let wanted = args[i + 1]
@@ -49,7 +77,7 @@ enum Entry {
             return
         }
         if let i = args.firstIndex(of: "--snapshot"), i + 1 < args.count {
-            Snapshot.render(to: args[i + 1], dark: args.contains("--dark"))
+            Snapshot.render(to: args[i + 1], dark: args.contains("--dark"), settings: args.contains("--settings"))
             return
         }
         ClaudePulseApp.main()
@@ -64,6 +92,9 @@ struct ClaudePulseApp: App {
         let preferences = Preferences()
         _preferences = StateObject(wrappedValue: preferences)
         _store = StateObject(wrappedValue: SessionStore(preferences: preferences))
+        HotKey.shared.setEnabled(preferences.hotkeyEnabled)
+        HotKey.shared.listenForToggleRequests()
+        PanelCapture.listen()
     }
 
     var body: some Scene {
@@ -82,8 +113,19 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: store.attentionCount > 0 ? "exclamationmark.bubble.fill" : "sparkle")
-            if let text { Text(text).monospacedDigit() }
+            if preferences.menuBarStyle == .bars {
+                Image(nsImage: MenuBarIcon.bars(
+                    fiveHour: store.limits?.fiveHour?.usedPercentage,
+                    sevenDay: store.limits?.sevenDay?.usedPercentage
+                ))
+                if store.attentionCount > 0 {
+                    Image(systemName: "exclamationmark.bubble.fill")
+                    Text("\(store.attentionCount)").monospacedDigit()
+                }
+            } else {
+                Image(systemName: store.attentionCount > 0 ? "exclamationmark.bubble.fill" : "sparkle")
+                if let text { Text(text).monospacedDigit() }
+            }
         }
     }
 
@@ -92,7 +134,7 @@ struct MenuBarLabel: View {
         let seven = store.limits?.sevenDay.map { Format.percent($0.usedPercentage) }
         var label: String?
         switch preferences.menuBarStyle {
-        case .iconOnly: label = nil
+        case .iconOnly, .bars: label = nil
         case .fiveHour: label = five
         case .both:
             if five != nil || seven != nil { label = "\(five ?? "–") · \(seven ?? "–")" }

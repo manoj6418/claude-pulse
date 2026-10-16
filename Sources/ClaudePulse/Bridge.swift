@@ -38,6 +38,14 @@ enum Bridge {
         var turnStartedAt = previous?.turnStartedAt
         var finishedAt = previous?.finishedAt
         var finalReply = previous?.finalReply
+        var currentStep = previous?.currentStep
+        var currentStepStartedAt = previous?.currentStepStartedAt
+        var compactCount = previous?.compactCount ?? 0
+        var steps = previous?.steps ?? []
+        var agents = (previous?.agents ?? [:]).filter { now.timeIntervalSince($0.value) < 2 * 3_600 } // drop orphans
+        // Tool calls from inside a background agent carry agent_id; they don't change the main step.
+        let fromAgent = (json["agent_id"] as? String).map { !$0.isEmpty } ?? false
+        let toolUseId = json["tool_use_id"] as? String
 
         switch event {
         case "UserPromptSubmit":
@@ -45,8 +53,41 @@ enum Bridge {
             // Background task results arrive as prompts mid-turn; they don't start a new turn.
             if previous?.state != .working || turnStartedAt == nil {
                 turnStartedAt = now
+                currentStep = nil
+                currentStepStartedAt = nil
             }
-        case "PostToolUse", "SessionStart":
+        case "PreToolUse":
+            state = .working
+            if !fromAgent {
+                let text = describeStep(tool: json["tool_name"] as? String ?? "Tool",
+                                        input: json["tool_input"] as? [String: Any] ?? [:])
+                currentStep = text
+                currentStepStartedAt = now
+                steps.append(StepRecord(id: toolUseId ?? UUID().uuidString, text: text, startedAt: now))
+                if steps.count > 10 { steps.removeFirst(steps.count - 10) }
+            }
+        case "PostToolUse", "PostToolUseFailure":
+            state = .working
+            if !fromAgent {
+                currentStep = nil
+                currentStepStartedAt = nil
+                let failed = event == "PostToolUseFailure"
+                let error = (json["error"] as? String).flatMap { $0.split(whereSeparator: \.isNewline).first.map(String.init) }
+                let interrupted = json["is_interrupt"] as? Bool
+                if let index = steps.lastIndex(where: { $0.id == toolUseId || (toolUseId == nil && $0.endedAt == nil) }) {
+                    steps[index].endedAt = now
+                    steps[index].failed = failed
+                    steps[index].error = failed ? error.map { String($0.prefix(160)) } : nil
+                    steps[index].interrupted = interrupted
+                }
+            }
+        case "SubagentStart":
+            state = previous?.state ?? .working
+            if let id = json["agent_id"] as? String { agents[id] = now }
+        case "SubagentStop":
+            state = previous?.state ?? .working
+            if let id = json["agent_id"] as? String { agents[id] = nil }
+        case "SessionStart":
             state = .working
         case "Notification":
             message = json["message"] as? String
@@ -64,10 +105,19 @@ enum Bridge {
             }
         case "Stop":
             state = .idle
+            currentStep = nil
+            currentStepStartedAt = nil
             finishedAt = now
             finalReply = (json["last_assistant_message"] as? String).map { String($0.prefix(300)) }
         case "PreCompact":
             state = .compacting
+            compactCount += 1
+        case "PermissionRequest":
+            let tool = json["tool_name"] as? String ?? "Tool"
+            // Plan approval and Claude's own questions need the terminal's richer UI.
+            guard !["AskUserQuestion", "ExitPlanMode"].contains(tool) else { return }
+            state = .needsPermission
+            message = "\(tool) wants permission"
         case "SessionEnd":
             try? FileManager.default.removeItem(at: stateURL)
             try? FileManager.default.removeItem(
@@ -79,11 +129,165 @@ enum Bridge {
 
         let record = HookStateRecord(
             sessionId: sessionId, state: state, message: message, updatedAt: now,
-            turnStartedAt: turnStartedAt, finishedAt: finishedAt, finalReply: finalReply
+            turnStartedAt: turnStartedAt, finishedAt: finishedAt, finalReply: finalReply,
+            currentStep: currentStep, currentStepStartedAt: currentStepStartedAt, compactCount: compactCount,
+            steps: steps, agents: agents
         )
         if let data = try? JSONCoding.encoder.encode(record) {
             FileManager.default.writeAtomically(data, to: stateURL)
         }
+
+        if event == "PermissionRequest" {
+            waitForPermissionAnswer(json, sessionId: sessionId, stateURL: stateURL)
+        }
+    }
+
+    // MARK: - Permission requests
+
+    /// The terminal shows its own prompt while this waits, and whichever is
+    /// answered first wins. Prints a decision only when the answer came from
+    /// Claude Pulse; quits quietly once the session moves on without one.
+    private static func waitForPermissionAnswer(_ json: [String: Any], sessionId: String, stateURL: URL) {
+        let fm = FileManager.default
+        let input = json["tool_input"] as? [String: Any] ?? [:]
+        let suggestions = json["permission_suggestions"] as? [[String: Any]] ?? []
+        let toolName = json["tool_name"] as? String ?? "Tool"
+        let request = PermissionRequestRecord(
+            id: UUID().uuidString,
+            sessionId: sessionId,
+            cwd: json["cwd"] as? String,
+            toolName: toolName,
+            summary: summarize(tool: toolName, input: input),
+            detail: input["description"] as? String,
+            canAlwaysAllow: !suggestions.isEmpty,
+            createdAt: Date(),
+            hookPid: getpid()
+        )
+        let requestURL = Paths.permissionRequests.appendingPathComponent("\(request.id).json")
+        let responseURL = Paths.permissionResponses.appendingPathComponent("\(request.id).json")
+        guard let data = try? JSONCoding.encoder.encode(request) else { return }
+        fm.writeAtomically(data, to: requestURL)
+        defer {
+            try? fm.removeItem(at: requestURL)
+            try? fm.removeItem(at: responseURL)
+        }
+
+        let registryPid = registryPid(for: sessionId)
+        let deadline = Date().addingTimeInterval(590)
+        while Date() < deadline {
+            if let data = try? Data(contentsOf: responseURL),
+               let response = try? JSONDecoder().decode(PermissionResponse.self, from: data),
+               response.id == request.id {
+                printDecision(response.decision, suggestions: suggestions)
+                return
+            }
+            if answeredElsewhere(since: request.createdAt, stateURL: stateURL, registryPid: registryPid) { return }
+            if getppid() == 1 { return } // Claude Code went away
+            usleep(250_000)
+        }
+    }
+
+    /// The session moved on: a later hook event that isn't "needs permission",
+    /// or Claude Code marked the session idle (e.g. the prompt was cancelled).
+    private static func answeredElsewhere(since created: Date, stateURL: URL, registryPid: Int32?) -> Bool {
+        if let data = try? Data(contentsOf: stateURL),
+           let state = try? JSONCoding.decoder.decode(HookStateRecord.self, from: data),
+           state.updatedAt > created.addingTimeInterval(0.5), state.state != .needsPermission {
+            return true
+        }
+        if let pid = registryPid,
+           let data = try? Data(contentsOf: Paths.claudeSessions.appendingPathComponent("\(pid).json")),
+           let entry = try? JSONDecoder().decode(RegistryEntry.self, from: data),
+           entry.status == "idle",
+           let at = entry.updatedAt, Date(timeIntervalSince1970: at / 1000) > created {
+            return true
+        }
+        return false
+    }
+
+    private static func registryPid(for sessionId: String) -> Int32? {
+        let files = (try? FileManager.default.contentsOfDirectory(at: Paths.claudeSessions, includingPropertiesForKeys: nil)) ?? []
+        for file in files where file.pathExtension == "json" {
+            if let data = try? Data(contentsOf: file),
+               let entry = try? JSONDecoder().decode(RegistryEntry.self, from: data),
+               entry.sessionId == sessionId {
+                return entry.pid
+            }
+        }
+        return nil
+    }
+
+    private static func printDecision(_ decision: PermissionDecision, suggestions: [[String: Any]]) {
+        var body: [String: Any]
+        switch decision {
+        case .allow:
+            body = ["behavior": "allow"]
+        case .alwaysAllow:
+            body = ["behavior": "allow"]
+            if !suggestions.isEmpty { body["updatedPermissions"] = suggestions }
+        case .deny:
+            body = ["behavior": "deny", "message": "Denied from Claude Pulse.", "interrupt": false]
+        }
+        let output: [String: Any] = [
+            "hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": body]
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: output) {
+            FileHandle.standardOutput.write(data)
+        }
+    }
+
+    /// Short present-tense line for the session row: "Running go test ./...", "Editing edd.go".
+    static func describeStep(tool: String, input: [String: Any]) -> String {
+        func file(_ key: String) -> String? {
+            (input[key] as? String).map { ($0 as NSString).lastPathComponent }
+        }
+        func short(_ text: String) -> String {
+            let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+            return line.count > 80 ? String(line.prefix(80)) + "…" : line
+        }
+        switch tool {
+        case "Bash":
+            return "Running " + short(dropLeadingCd(input["command"] as? String ?? "a command"))
+        case "Edit", "MultiEdit", "Write", "NotebookEdit":
+            return "Editing " + (file("file_path") ?? file("notebook_path") ?? "a file")
+        case "Read":
+            return "Reading " + (file("file_path") ?? "a file")
+        case "Grep", "Glob":
+            return "Searching " + short(input["pattern"] as? String ?? "files")
+        case "WebFetch":
+            let host = (input["url"] as? String).flatMap { URL(string: $0)?.host } ?? "the web"
+            return "Fetching " + host
+        case "WebSearch":
+            return "Searching the web: " + short(input["query"] as? String ?? "")
+        case "Task", "Agent":
+            return "Agent: " + short(input["description"] as? String ?? "working")
+        default:
+            if tool.hasPrefix("mcp__") {
+                let parts = tool.split(separator: "_", omittingEmptySubsequences: true)
+                return "Using " + parts.dropFirst().joined(separator: " ")
+            }
+            return "Using " + tool
+        }
+    }
+
+    /// "cd /some/long/path && go test ./..." → "go test ./...": the folder is already on the row.
+    static func dropLeadingCd(_ command: String) -> String {
+        let trimmed = command.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasPrefix("cd "), let range = trimmed.range(of: "&&") else { return command }
+        let rest = trimmed[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        return rest.isEmpty ? command : rest
+    }
+
+    /// One line saying what the tool will do.
+    private static func summarize(tool: String, input: [String: Any]) -> String {
+        for key in ["command", "file_path", "notebook_path", "url", "path", "pattern", "query", "prompt"] {
+            if let value = input[key] as? String, !value.isEmpty { return String(value.prefix(600)) }
+        }
+        guard !input.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: input, options: [.sortedKeys, .withoutEscapingSlashes]),
+              let text = String(data: data, encoding: .utf8)
+        else { return tool }
+        return String(text.prefix(600))
     }
 
     // MARK: - Status line snapshot
@@ -148,6 +352,8 @@ enum Bridge {
             linesRemoved: (cost?["total_lines_removed"] as? NSNumber)?.intValue,
             durationMs: (cost?["total_duration_ms"] as? NSNumber)?.doubleValue,
             version: json["version"] as? String,
+            totalInputTokens: (ctx?["total_input_tokens"] as? NSNumber)?.intValue,
+            totalOutputTokens: (ctx?["total_output_tokens"] as? NSNumber)?.intValue,
             updatedAt: Date()
         )
         if let data = try? JSONCoding.encoder.encode(session) {

@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct LimitCard: View {
     var title: String
@@ -6,6 +7,10 @@ struct LimitCard: View {
     var windowLength: TimeInterval
     var projection: Projection?
     var now: Date
+    /// Usage samples in this window, for the small history chart.
+    var series: [(Date, Double)] = []
+    /// Chart only the recorded part, not the whole window (for 7 days that's mostly empty).
+    var chartRecordedOnly = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -27,6 +32,10 @@ struct LimitCard: View {
                 color: Palette.usage(window?.usedPercentage ?? 0),
                 marker: elapsedFraction
             )
+
+            if let window, series.count >= 2 {
+                history(window)
+            }
 
             if let window {
                 HStack(spacing: 4) {
@@ -58,6 +67,35 @@ struct LimitCard: View {
         .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    /// How usage climbed since the window opened; the x axis spans the whole window.
+    private func history(_ window: LimitWindow) -> some View {
+        let windowStart = window.resetsAt.addingTimeInterval(-windowLength)
+        let points = series.filter { $0.0 >= windowStart }
+        let start = chartRecordedOnly ? (points.first?.0 ?? windowStart) : windowStart
+        let end = chartRecordedOnly ? max(now, start.addingTimeInterval(60)) : window.resetsAt
+        let color = Palette.usage(window.usedPercentage)
+        return Chart {
+            ForEach(Array(points.enumerated()), id: \.offset) { _, point in
+                AreaMark(x: .value("Time", point.0), y: .value("Used", point.1))
+                    .foregroundStyle(color.opacity(0.18))
+                    .interpolationMethod(.stepEnd)
+                LineMark(x: .value("Time", point.0), y: .value("Used", point.1))
+                    .foregroundStyle(color)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5))
+                    .interpolationMethod(.stepEnd)
+            }
+            RuleMark(x: .value("Now", now))
+                .foregroundStyle(Color.primary.opacity(0.25))
+                .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 2]))
+        }
+        .chartXScale(domain: start...end)
+        .chartYScale(domain: 0...100)
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .frame(height: 26)
+        .help(chartRecordedOnly ? "Usage since Claude Pulse started recording" : "Usage since this window opened")
     }
 
     /// Share of the window that has already passed; the bar's marker shows "on pace" usage.

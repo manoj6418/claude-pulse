@@ -103,3 +103,96 @@ struct SectionHeader: View {
         }
     }
 }
+
+extension View {
+    /// Adds a keyboard shortcut only when `active`.
+    @ViewBuilder
+    func shortcut(_ key: KeyEquivalent, _ modifiers: EventModifiers, when active: Bool) -> some View {
+        if active { keyboardShortcut(key, modifiers: modifiers) } else { self }
+    }
+}
+
+/// A ScrollView as tall as its content, up to `maxHeight`; it only scrolls past that.
+/// (A plain ScrollView has no natural height and collapses inside the menu bar panel.)
+struct FitScrollView<Content: View>: View {
+    var maxHeight: CGFloat
+    @ViewBuilder var content: Content
+    @State private var contentHeight: CGFloat = 0
+
+    var body: some View {
+        ScrollView {
+            content.background(
+                GeometryReader { geo in
+                    Color.clear.preference(key: FitHeightKey.self, value: geo.size.height)
+                }
+            )
+        }
+        .frame(height: min(max(contentHeight, 40), maxHeight))
+        .scrollIndicators(contentHeight > maxHeight ? .automatic : .never)
+        .onPreferenceChange(FitHeightKey.self) { contentHeight = $0 }
+    }
+}
+
+private struct FitHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+extension Palette {
+    static func label(_ name: String) -> Color {
+        switch name {
+        case "red": return .red
+        case "orange": return .orange
+        case "yellow": return .yellow
+        case "green": return .green
+        case "blue": return .blue
+        case "purple": return .purple
+        default: return .gray
+        }
+    }
+}
+
+/// A session's last tool calls: ✓ done, ✗ failed, ⏹ interrupted, ◌ running.
+struct StepList: View {
+    var steps: [StepRecord]
+    var now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(steps.reversed()) { step in
+                HStack(spacing: 6) {
+                    Image(systemName: icon(step))
+                        .foregroundStyle(color(step))
+                        .frame(width: 12)
+                    Text(step.text)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 4)
+                    Text(duration(step))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                .font(.system(size: 10))
+                .help(step.error ?? step.text)
+            }
+        }
+        .padding(6)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func icon(_ step: StepRecord) -> String {
+        if step.endedAt == nil { return "circle.dotted" }
+        if step.interrupted == true { return "stop.circle" }
+        return step.failed == true ? "xmark.circle.fill" : "checkmark.circle"
+    }
+
+    private func color(_ step: StepRecord) -> Color {
+        if step.endedAt == nil { return .blue }
+        if step.interrupted == true { return .secondary }
+        return step.failed == true ? .red : .green
+    }
+
+    private func duration(_ step: StepRecord) -> String {
+        Format.elapsed((step.endedAt ?? now).timeIntervalSince(step.startedAt))
+    }
+}

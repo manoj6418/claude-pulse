@@ -4,13 +4,13 @@ import AppKit
 /// Renders the menu panel with live data to a PNG: ClaudePulse --snapshot out.png [--dark]
 enum Snapshot {
     @MainActor
-    static func render(to path: String, dark: Bool) {
+    static func render(to path: String, dark: Bool, settings: Bool = false) {
         let preferences = Preferences()
-        let store = SessionStore(preferences: preferences)
+        let store = SessionStore(preferences: preferences, detectsEvents: false)
         // Let the first background refresh land.
         RunLoop.main.run(until: Date().addingTimeInterval(1.5))
 
-        let view = MenuContent(store: store, preferences: preferences, staticLayout: true)
+        let view = MenuContent(store: store, preferences: preferences, staticLayout: true, showingSettings: settings)
             .background(dark ? Color(white: 0.13) : Color(white: 0.96))
             .environment(\.colorScheme, dark ? .dark : .light)
         let renderer = ImageRenderer(content: view)

@@ -50,6 +50,14 @@ final class LimitHistory {
         }
     }
 
+    /// Usage points for the window that resets at `resetsAt`, oldest first.
+    func series(resetsAt: Date, value: (LimitSample) -> Double?, resets: (LimitSample) -> Date?) -> [(Date, Double)] {
+        samples.compactMap { sample in
+            guard let r = resets(sample), abs(r.timeIntervalSince(resetsAt)) < 120, let v = value(sample) else { return nil }
+            return (sample.at, v)
+        }
+    }
+
     /// Projects one window from samples inside the current window and the lookback.
     /// Usage arrives as whole percents, so one step over a few minutes looks like a
     /// huge rate. No projection until the samples span `minimumSpan`, and the

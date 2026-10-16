@@ -16,6 +16,11 @@ enum Format {
         return "<1m"
     }
 
+    /// Like `duration`, but with seconds under a minute: "42s", "4m", "1h 5m".
+    static func elapsed(_ seconds: TimeInterval) -> String {
+        seconds < 60 ? "\(max(0, Int(seconds)))s" : duration(seconds)
+    }
+
     static func ago(_ date: Date?, now: Date = Date()) -> String {
         guard let date else { return "—" }
         let s = now.timeIntervalSince(date)

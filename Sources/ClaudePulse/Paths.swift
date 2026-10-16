@@ -18,11 +18,18 @@ enum Paths {
     static let limitsFile = support.appendingPathComponent("limits.json")
     static let historyFile = support.appendingPathComponent("limit-history.json")
     static let configFile = support.appendingPathComponent("config.json")
+    static let recentFile = support.appendingPathComponent("recent.json")
+    static let permissionRequests = support.appendingPathComponent("permission-requests")
+    static let permissionResponses = support.appendingPathComponent("permission-responses")
 
+    /// Private to this user: a file in permission-responses approves a tool call.
     static func ensureSupportDirs() {
-        for dir in [support, bridgeSessions, hookStates] {
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let fm = FileManager.default
+        for dir in [support, bridgeSessions, hookStates, permissionRequests, permissionResponses] {
+            try? fm.createDirectory(at: dir, withIntermediateDirectories: true,
+                                    attributes: [.posixPermissions: 0o700])
         }
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: support.path)
     }
 
     /// Claude Code stores transcripts under a folder named after the cwd,

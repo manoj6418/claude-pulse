@@ -11,6 +11,7 @@ final class TranscriptReader {
 
     private var cache: [String: CacheEntry] = [:]
     private var pathBySession: [String: String] = [:]
+    private var ttlByPath: [String: TimeInterval] = [:]
     private let tailBytes: UInt64 = 768 * 1024
 
     func transcriptPath(sessionId: String, cwd: String?, hint: String?) -> String? {
@@ -55,7 +56,9 @@ final class TranscriptReader {
         try? handle.seek(toOffset: start)
         guard let data = try? handle.readToEnd() else { return nil }
 
-        let info = parseTail(data, droppedHead: start > 0)
+        var info = parseTail(data, droppedHead: start > 0)
+        // A reply that only read the cache doesn't say which TTL it uses; keep the last known one.
+        if info.cacheTTL == nil { info.cacheTTL = ttlByPath[path] } else { ttlByPath[path] = info.cacheTTL }
         cache[path] = CacheEntry(size: size, modified: modified, info: info)
         return info
     }
@@ -85,6 +88,13 @@ final class TranscriptReader {
             info.requestedModel = obj["requestedModel"] as? String
             info.effort = obj["effort"] as? String
             info.contextTokens = input + creation + read
+            info.cacheReadTokens = read
+            info.cacheWriteTokens = creation
+            info.uncachedTokens = input
+            if let detail = usage["cache_creation"] as? [String: Any] {
+                if Self.int(detail["ephemeral_1h_input_tokens"]) > 0 { info.cacheTTL = 3_600 }
+                else if Self.int(detail["ephemeral_5m_input_tokens"]) > 0 { info.cacheTTL = 300 }
+            }
             info.outputTokens = Self.int(usage["output_tokens"])
             if let branch = obj["gitBranch"] as? String, !branch.isEmpty { info.gitBranch = branch }
             if let ts = obj["timestamp"] as? String { info.lastAssistantAt = Self.parseDate(ts) }
