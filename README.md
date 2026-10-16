@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon-1024.png" width="128" height="128" alt="Claude Pulse icon">
+</p>
+
 # Claude Pulse
 
 A macOS menu bar app for Claude Code. It shows your plan limits and every running session at a glance, tells you when a session needs you or has finished, and lets you answer permission prompts without switching windows.
@@ -68,6 +72,7 @@ Needs macOS 14+ and the Xcode Command Line Tools (full Xcode is not required).
 ```sh
 make install   # builds, copies to ~/Applications, launches
 make dmg       # builds build/ClaudePulse-<version>.dmg for sharing
+make icon      # redraws the icon and social preview from assets/make-logo.swift
 ```
 
 ## How it gets its data
