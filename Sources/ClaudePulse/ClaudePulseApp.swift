@@ -91,7 +91,20 @@ struct ClaudePulseApp: App {
     init() {
         let preferences = Preferences()
         _preferences = StateObject(wrappedValue: preferences)
-        _store = StateObject(wrappedValue: SessionStore(preferences: preferences))
+        // A copy pointed at another home (CLAUDE_PULSE_HOME, used for demo screenshots)
+        // shows that data but never sends notifications or takes the hotkey.
+        let variables = ProcessInfo.processInfo.environment
+        let isDemo = variables["CLAUDE_PULSE_HOME"] != nil
+        _store = StateObject(wrappedValue: SessionStore(preferences: preferences, detectsEvents: !isDemo))
+        switch variables["CLAUDE_PULSE_APPEARANCE"] {
+        case "light": NSApplication.shared.appearance = NSAppearance(named: .aqua)
+        case "dark": NSApplication.shared.appearance = NSAppearance(named: .darkAqua)
+        default: break
+        }
+        if isDemo {
+            PanelCapture.listen()
+            return
+        }
         HotKey.shared.setEnabled(preferences.hotkeyEnabled)
         HotKey.shared.listenForToggleRequests()
         PanelCapture.listen()

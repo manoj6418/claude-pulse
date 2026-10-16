@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Claude Pulse — Claude Code in your Mac menu bar</title>
+  <meta name="description" content="A free macOS menu bar app for Claude Code: plan limits, live session status, finished and permission alerts, and Allow/Deny from the menu bar.">
+  <link rel="icon" type="image/png" href="img/favicon.png">
+  <link rel="apple-touch-icon" href="img/icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Claude Pulse">
+  <meta property="og:description" content="Your Claude Code sessions and plan limits, live in the macOS menu bar.">
+  <meta property="og:image" content="https://manoj6418.github.io/claude-pulse/img/social-preview.png">
+  <meta property="og:url" content="https://manoj6418.github.io/claude-pulse/">
+  <meta name="twitter:card" content="summary_large_image">
+  <style>
+    :root {
+      --bg: #110f18;
+      --bg-2: #1a1726;
+      --card: #1f1b2d;
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f4f2f8;
+      --muted: #a7a1b8;
+      --coral: #ff7a59;
+      --amber: #ffb547;
+      --radius: 18px;
+      --max: 1120px;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    img { max-width: 100%; display: block; }
+    .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+
+    /* Nav */
+    nav { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(14px); background: rgba(17, 15, 24, 0.72); border-bottom: 1px solid var(--line); }
+    nav .wrap { display: flex; align-items: center; gap: 24px; height: 64px; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; }
+    .brand img { width: 30px; height: 30px; }
+    nav .links { margin-left: auto; display: flex; gap: 22px; font-size: 15px; }
+    nav .links a { color: var(--muted); text-decoration: none; }
+    nav .links a:hover { color: var(--text); }
+
+    /* Hero */
+    .hero { position: relative; overflow: hidden; padding: 84px 0 40px; }
+    .hero::before {
+      content: ""; position: absolute; inset: -30% -10% auto; height: 640px; pointer-events: none;
+      background: radial-gradient(closest-side, rgba(255, 122, 89, 0.22), transparent 70%);
+    }
+    .hero .wrap { position: relative; display: grid; grid-template-columns: 1.05fr 0.95fr; gap: 56px; align-items: center; }
+    .eyebrow { display: inline-flex; gap: 8px; align-items: center; color: var(--amber); font-size: 14px; font-weight: 600;
+               background: rgba(255, 181, 71, 0.1); border: 1px solid rgba(255, 181, 71, 0.25); padding: 5px 12px; border-radius: 999px; }
+    h1 { font-size: clamp(38px, 5.2vw, 60px); line-height: 1.06; letter-spacing: -0.02em; margin: 20px 0 18px; }
+    h1 .accent { background: linear-gradient(90deg, var(--coral), var(--amber)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { font-size: 20px; color: var(--muted); max-width: 34em; margin: 0 0 30px; }
+    .cta { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .btn { display: inline-flex; align-items: center; gap: 10px; padding: 14px 22px; border-radius: 12px; font-weight: 650; text-decoration: none; font-size: 16px; }
+    .btn.primary { background: linear-gradient(90deg, var(--coral), var(--amber)); color: #1a1208; box-shadow: 0 10px 30px rgba(255, 122, 89, 0.28); }
+    .btn.primary:hover { filter: brightness(1.05); }
+    .btn.ghost { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.03); }
+    .btn.ghost:hover { background: rgba(255, 255, 255, 0.07); }
+    .fine { color: var(--muted); font-size: 14px; margin-top: 16px; }
+    .shot { position: relative; justify-self: center; }
+    .shot img { width: 400px; border-radius: 16px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line); }
+
+    /* Sections */
+    section { padding: 88px 0; }
+    section.alt { background: var(--bg-2); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    h2 { font-size: clamp(30px, 3.6vw, 42px); letter-spacing: -0.015em; line-height: 1.15; margin: 0 0 14px; }
+    .sub { color: var(--muted); font-size: 19px; max-width: 40em; margin: 0 0 44px; }
+
+    .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+    .card .icon { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; font-size: 20px; margin-bottom: 14px;
+                  background: linear-gradient(135deg, rgba(255, 122, 89, 0.22), rgba(255, 181, 71, 0.12)); }
+    .card h3 { margin: 0 0 8px; font-size: 18px; }
+    .card p { margin: 0; color: var(--muted); font-size: 15.5px; }
+    .card code, .steps code, .faq code, li code { background: rgba(255, 255, 255, 0.07); padding: 1px 6px; border-radius: 6px; font-size: 0.9em; }
+
+    .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+    .pair .shots { display: flex; gap: 18px; justify-content: center; }
+    .pair .shots img { width: 48%; border-radius: 14px; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--line); }
+    .checks { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+    .checks li { padding-left: 32px; position: relative; color: var(--muted); }
+    .checks li strong { color: var(--text); }
+    .checks li::before { content: "✓"; position: absolute; left: 0; top: 0; width: 22px; height: 22px; border-radius: 50%;
+                         display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #1a1208;
+                         background: linear-gradient(135deg, var(--coral), var(--amber)); }
+
+    .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; counter-reset: step; }
+    .steps .card { position: relative; padding-top: 58px; }
+    .steps .card::before { counter-increment: step; content: counter(step); position: absolute; top: 20px; left: 24px; width: 28px; height: 28px;
+                           border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #1a1208;
+                           background: linear-gradient(135deg, var(--coral), var(--amber)); }
+    pre { background: #0b0a10; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13.5px; color: #e9e6f2; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+    .faq { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .faq h3 { font-size: 17px; margin: 0 0 6px; }
+    .faq p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+    footer { padding: 48px 0 60px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+    footer .wrap { display: flex; flex-wrap: wrap; gap: 16px; justify-content: space-between; align-items: center; }
+
+    @media (max-width: 900px) {
+      .hero .wrap, .pair { grid-template-columns: 1fr; }
+      .hero { padding-top: 56px; }
+      .shot img { width: 100%; max-width: 400px; }
+      .grid, .steps, .faq { grid-template-columns: 1fr; }
+      nav .links a.hide-sm { display: none; }
+      section { padding: 64px 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="wrap">
+      <a class="brand" href="#"><img src="img/icon.png" alt="">Claude Pulse</a>
+      <div class="links">
+        <a class="hide-sm" href="#features">Features</a>
+        <a class="hide-sm" href="#install">Install</a>
+        <a class="hide-sm" href="#faq">FAQ</a>
+        <a href="https://github.com/manoj6418/claude-pulse">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div class="wrap">
+      <div>
+        <span class="eyebrow">Free · macOS 14+ · for Claude Code</span>
+        <h1>Every Claude Code session, <span class="accent">one glance away.</span></h1>
+        <p class="lead">Claude Pulse lives in your menu bar. See your 5-hour and weekly limits, what each session is doing right now, and answer permission prompts without hunting for the right terminal.</p>
+        <div class="cta">
+          <a class="btn primary" href="https://github.com/manoj6418/claude-pulse/releases/latest">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16.37 12.6c-.02-2.3 1.88-3.4 1.96-3.46-1.07-1.56-2.73-1.78-3.32-1.8-1.41-.14-2.76.83-3.48.83-.72 0-1.82-.81-3-.79-1.54.02-2.96.9-3.76 2.28-1.6 2.78-.41 6.9 1.15 9.15.76 1.1 1.67 2.34 2.86 2.3 1.15-.05 1.58-.74 2.97-.74s1.78.74 2.99.72c1.24-.02 2.02-1.12 2.77-2.23.87-1.28 1.23-2.52 1.25-2.58-.03-.01-2.4-.92-2.42-3.65zM14.1 5.86c.63-.77 1.06-1.83.94-2.89-.91.04-2.01.61-2.67 1.37-.58.67-1.1 1.76-.96 2.8 1.01.08 2.05-.52 2.69-1.28z"/></svg>
+            Download for macOS
+          </a>
+          <a class="btn ghost" href="https://github.com/manoj6418/claude-pulse">View on GitHub</a>
+        </div>
+        <p class="fine">No account, no API key, no network calls you didn't turn on. Unofficial; not affiliated with Anthropic.</p>
+      </div>
+      <div class="shot">
+        <img src="img/panel-dark.jpg" width="400" alt="Claude Pulse panel: plan usage, a permission prompt with Allow and Deny, and three running sessions">
+      </div>
+    </div>
+  </header>
+
+  <section id="features" class="alt">
+    <div class="wrap">
+      <h2>Stop checking every terminal.</h2>
+      <p class="sub">Claude Pulse reads what Claude Code already reports and turns it into one calm panel and a few useful alerts.</p>
+      <div class="grid">
+        <div class="card">
+          <div class="icon">⏱</div>
+          <h3>Plan limits, with a forecast</h3>
+          <p>5-hour and 7-day usage, reset times in your time zone, a history chart, and where you'll land at this pace.</p>
+        </div>
+        <div class="card">
+          <div class="icon">✋</div>
+          <h3>Allow or Deny from anywhere</h3>
+          <p>Permission prompts show the exact command with <strong>Allow</strong>, <strong>Always allow</strong> and <strong>Deny</strong>, in the panel and in the notification. The terminal prompt stays open too.</p>
+        </div>
+        <div class="card">
+          <div class="icon">⚙️</div>
+          <h3>What's running right now</h3>
+          <p>"Running go test · 42s", "Editing retry.go", background agents, failed commands, and a warning when a session looks stuck.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🔔</div>
+          <h3>Know when it's done</h3>
+          <p>A notification when a session finishes, with how long it worked and its first line. Click it to jump to that terminal.</p>
+        </div>
+        <div class="card">
+          <div class="icon">🌿</div>
+          <h3>Git and cache at a glance</h3>
+          <p>Uncommitted and unpushed changes per session, plus prompt-cache state: "cache 98% · warm 41m", or "cold" when the next message costs more.</p>
+        </div>
+        <div class="card">
+          <div class="icon">📊</div>
+          <h3>Today's spend</h3>
+          <p>API-equivalent cost and tokens by model and project, each session's share of the last hour, an optional daily budget, and CSV export.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap pair">
+      <div>
+        <h2>Calm by default.</h2>
+        <p class="sub" style="margin-bottom: 28px">Only a permission prompt counts as "needs you". Everything else waits quietly until you look.</p>
+        <ul class="checks">
+          <li><strong>Smart alerts.</strong> Finished, needs permission and 90% of a limit are on; the rest are one switch away.</li>
+          <li><strong>Quiet when you're looking.</strong> No banner for a session whose terminal is already in front.</li>
+          <li><strong>On your phone, if you want.</strong> Optional alerts through the free ntfy app, without command or reply text by default.</li>
+          <li><strong>Keyboard first.</strong> <code>⌃⌥C</code> opens the panel, <code>⌘↩</code> allows the top prompt.</li>
+          <li><strong>Light and dark.</strong> Looks at home in either.</li>
+        </ul>
+      </div>
+      <div class="shots">
+        <img src="img/panel-light.jpg" width="400" alt="Claude Pulse panel in light mode">
+        <img src="img/panel-dark.jpg" width="400" alt="Claude Pulse panel in dark mode">
+      </div>
+    </div>
+  </section>
+
+  <section id="install" class="alt">
+    <div class="wrap">
+      <h2>Up and running in a minute.</h2>
+      <p class="sub">Requires macOS 14 or later and Claude Code. Plan limits appear on Pro and Max plans.</p>
+      <div class="steps">
+        <div class="card">
+          <h3>Download</h3>
+          <p>Get the latest <code>.dmg</code> from <a href="https://github.com/manoj6418/claude-pulse/releases/latest">Releases</a>, open it and drag Claude Pulse to Applications.</p>
+        </div>
+        <div class="card">
+          <h3>Allow the first launch</h3>
+          <p>The app isn't notarized yet, so macOS asks once. Open <strong>System Settings → Privacy &amp; Security → Open Anyway</strong>, or run:</p>
+          <pre>xattr -dr com.apple.quarantine /Applications/ClaudePulse.app</pre>
+        </div>
+        <div class="card">
+          <h3>Connect</h3>
+          <p>Click the menu bar icon, then <strong>Connect</strong>. It adds a status line and a few hooks to <code>~/.claude/settings.json</code> (backup saved first). Restart your Claude Code sessions.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq">
+    <div class="wrap">
+      <h2>Questions</h2>
+      <p class="sub">Short answers. The <a href="https://github.com/manoj6418/claude-pulse#readme">README</a> has the details.</p>
+      <div class="faq">
+        <div class="card">
+          <h3>Does it read my code or send it anywhere?</h3>
+          <p>No. It reads the status and usage numbers Claude Code already reports, plus <code>git status</code> counts. Nothing leaves your Mac unless you turn on phone alerts.</p>
+        </div>
+        <div class="card">
+          <h3>Does it need an API key or my login?</h3>
+          <p>No. It never touches the Keychain and uses no undocumented APIs. Limits come from Claude Code's own status line data.</p>
+        </div>
+        <div class="card">
+          <h3>What network calls does it make?</h3>
+          <p>A check of status.claude.com every 5 minutes and GitHub's latest release every 12 hours. Both can be turned off in Settings → Online.</p>
+        </div>
+        <div class="card">
+          <h3>How do I remove it?</h3>
+          <p>Settings → <strong>Disconnect</strong> removes only its entries and restores your old status line. Then delete the app.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="wrap">
+      <span>Claude Pulse · Unofficial; not affiliated with Anthropic. Claude is a trademark of Anthropic.</span>
+      <a href="https://github.com/manoj6418/claude-pulse">github.com/manoj6418/claude-pulse</a>
+    </div>
+  </footer>
+</body>
+</html>

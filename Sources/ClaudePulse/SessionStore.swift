@@ -266,7 +266,7 @@ final class SessionStore: ObservableObject {
 
             DispatchQueue.main.async {
                 self.sessions = sessions
-                self.rememberProjects(sessions.map(\.cwd))
+                if self.detectsEvents { self.rememberProjects(sessions.map(\.cwd)) }
                 self.unlistedRequests = unlisted
                 self.today = today
                 self.fiveHourSeries = fiveSeries
