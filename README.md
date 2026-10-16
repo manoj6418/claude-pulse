@@ -6,6 +6,8 @@
 
 A macOS menu bar app for Claude Code. It shows your plan limits and every running session at a glance, tells you when a session needs you or has finished, and lets you answer permission prompts without switching windows.
 
+**Website:** [manoj6418.github.io/claude-pulse](https://manoj6418.github.io/claude-pulse/) · **Download:** [latest release](https://github.com/manoj6418/claude-pulse/releases/latest)
+
 Unofficial; not affiliated with Anthropic.
 
 ## What it shows
